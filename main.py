@@ -1,15 +1,25 @@
-from fastapi import FastAPI
-from pydantic import BaseModel
-app = FastAPI(title = "Loan Default Predciton API")
+# main.py
+from fastapi import FastAPI, HTTPException
+from contextlib import asynccontextmanager
+from schema import LoanRequest, LoanResponse
+from model_loader import predict_default_probability, load
 
-class LoanRequest(BaseModel):
-    income: float
-    LTV: float
-    Credit_Score: float
-class LoanResponse(BaseModel):
-    default_probability: float
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    load()          # runs at startup
+    yield           # server is running
+                    # anything after yield runs at shutdown
 
-@app.post("/predict")
-async def predict(payload: LoanRequest) -> LoanResponse:
-    #implementing prediction logic
-    return LoanResponse(default_probability=0.5)
+app = FastAPI(title="Loan Default Predictor", version="1.0", lifespan=lifespan)
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+@app.post("/predict", response_model=LoanResponse)
+async def predict(request: LoanRequest) -> LoanResponse:
+    try:
+        result = predict_default_probability(request.model_dump())
+        return LoanResponse(**result)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
